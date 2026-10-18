@@ -1,0 +1,8 @@
+/* midnight-purple: Jellyfin Web CSS. Native Jellyfin clients may ignore CSS. */
+:root { --theme-bg: #151020; --theme-accent: #ae80ff; --theme-text: #f8f3ff; }
+.skinHeader, .backgroundContainer, .mainDrawer, .dialog, .formDialogHeader, .formDialogFooter { background-color: var(--theme-bg) !important; }
+.button-submit, .button-accent, .raised.button-submit { background: var(--theme-accent) !important; color: #fff !important; }
+.emby-tab-button-active, .navMenuOption-selected, .headerSelectedPlayer { color: var(--theme-accent) !important; }
+.cardBox { border-radius: 12px; overflow: hidden; }
+.cardScalable { border-radius: 12px; overflow: hidden; }
+.itemProgressBarForeground { background-color: var(--theme-accent) !important; }

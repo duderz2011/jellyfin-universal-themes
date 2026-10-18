@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "themes": [
+    {"id":"cinema-dark","name":"Cinema Dark","accent":"#e53935","background":"#101015","text":"#f6f6f8","stylesheet":"themes/cinema-dark.css"},
+    {"id":"ocean-blue","name":"Ocean Blue","accent":"#20b8ed","background":"#081b2c","text":"#f0f8ff","stylesheet":"themes/ocean-blue.css"},
+    {"id":"midnight-purple","name":"Midnight Purple","accent":"#ae80ff","background":"#151020","text":"#f8f3ff","stylesheet":"themes/midnight-purple.css"}
+  ],
+  "genres": ["Action","Adventure","Animation","Comedy","Crime","Documentary","Drama","Family","Fantasy","History","Horror","Music","Mystery","Romance","Science Fiction","Thriller","War","Western"]
+}
