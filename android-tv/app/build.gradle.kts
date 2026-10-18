@@ -5,7 +5,7 @@ android {
     defaultConfig {
         applicationId = "uk.co.universalthemes.tv"
         minSdk = 23
-        targetSdk = 28 // Test build: review/update target for distribution.
+        targetSdk = 35 // Test build: review/update target for distribution.
         versionCode = 1
         versionName = "0.1.0"
     }
