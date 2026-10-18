@@ -405,6 +405,48 @@ async function utStartHls(){
 }
 utHlsButton.addEventListener('click',utStartHls);
 /* UT_HLS_V15_END */
+/* UT_AUTO_HLS_V16_START: one automatic direct-to-HLS fallback per item. */
+let utAutoItemId = null;
+let utAutoAttempted = false;
+let utAutoTimer = null;
+let utAutoSwitching = false;
+function utClearAutoTimer(){if(utAutoTimer!==null){clearTimeout(utAutoTimer);utAutoTimer=null;}}
+function utArmAutoTimer(){
+ utClearAutoTimer();
+ const p=activePlayback;
+ if(!p || p.playMethod==='Transcode' || utAutoSwitching || utAutoAttempted)return;
+ utAutoTimer=setTimeout(()=>{
+  const v=$('videoPlayer');
+  if(activePlayback===p && !$('videoPlayer').paused && v.readyState<3 && !utAutoAttempted){utTryAutoHls('Direct playback did not start');}
+ },20000);
+}
+async function utTryAutoHls(reason){
+ const p=activePlayback;
+ if(!p || p.playMethod==='Transcode' || utAutoSwitching || utAutoAttempted || utHlsLoading || !$('player').open)return;
+ if(utAutoItemId!==p.itemId){utAutoItemId=p.itemId;utAutoAttempted=false;}
+ utAutoAttempted=true;utAutoSwitching=true;utClearAutoTimer();
+ utHlsStatus.textContent=reason+'. Switching to Jellyfin HLS…';
+ try{await utStartHls();}
+ catch(e){utHlsStatus.textContent='Automatic HLS failed: '+e.message;}
+ finally{utAutoSwitching=false;}
+}
+// The original v1.5 player remains the default. Guard against fatal HLS errors retrying forever.
+$('videoPlayer').addEventListener('error',()=>{
+ const p=activePlayback;
+ if(p && p.playMethod!=='Transcode' && !utAutoAttempted){utTryAutoHls('Direct playback error');}
+});
+$('videoPlayer').addEventListener('loadstart',()=>{
+ const p=activePlayback;
+ if(!p || p.playMethod==='Transcode' || utAutoSwitching)return;
+ if(utAutoItemId!==p.itemId){utAutoItemId=p.itemId;utAutoAttempted=false;}
+ utArmAutoTimer();
+});
+$('videoPlayer').addEventListener('playing',utClearAutoTimer);
+$('videoPlayer').addEventListener('emptied',utClearAutoTimer);
+const utStopV16=stopPlayer;
+stopPlayer=function(){utClearAutoTimer();utAutoItemId=null;utAutoAttempted=false;return utStopV16();};
+/* UT_AUTO_HLS_V16_END */
+
 
 
 })();
