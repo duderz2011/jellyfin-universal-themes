@@ -5,7 +5,7 @@ const auth={token:null,userId:null}, page={section:'all',query:''};
 const $=id=>document.getElementById(id);
 const themes=new Set(['netflix-style','prime-style','disney-style']);
 const genres=['Action','Adventure','Animation','Comedy','Crime','Documentary','Drama','Family','Fantasy','Horror','Mystery','Romance','Science Fiction','Thriller','War','Western'];
-function headers(){return {'Content-Type':'application/json','X-Emby-Authorization':`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="UniversalThemesWeb-Local", Version="0.6.0", Token="${auth.token||''}"`};}
+function headers(){return {'Content-Type':'application/json','Authorization':`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="UniversalThemesWeb-Local", Version="0.6.0", Token="${auth.token||''}"`};}
 async function api(path,options={}){const r=await fetch(base+path,{...options,headers:{...headers(),...(options.headers||{})}});if(!r.ok)throw Error(`Jellyfin HTTP ${r.status} on ${path.split('?')[0]}`);return r.json();}
 function qs(obj){return new URLSearchParams(Object.entries(obj).filter(([,v])=>v!==undefined&&v!==null&&v!=='' )).toString();}
 function link(id){return base+'/#!/details?id='+encodeURIComponent(id);}
@@ -22,7 +22,7 @@ if(page.query){await row('Search results for '+page.query,{SearchTerm:page.query
 else{const picks=genres;for(const genre of picks){await row(genre,{Genres:genre,SortBy:'SortName',SortOrder:'Ascending'});}}
 $('status').textContent='';if(!$('rows').children.length)$('status').textContent='No matching items in accessible libraries.';
 }catch(e){$('status').textContent='Unable to load library: '+e.message;}}
-$('loginForm').onsubmit=async e=>{e.preventDefault();$('loginStatus').textContent='Signing in…';try{const r=await api('/Users/AuthenticateByName',{method:'POST',body:JSON.stringify({Username:$('username').value,Pw:$('password').value})});auth.token=r.AccessToken;auth.userId=r.User.Id;$('password').value='';$('login').hidden=true;$('app').hidden=false;build();}catch(e){$('loginStatus').textContent='Login failed: '+e.message;}};
+$('loginForm').onsubmit=async e=>{e.preventDefault();$('loginStatus').textContent='Signing in…';try{const r=await api('/Users/AuthenticateByName',{method:'POST',body:JSON.stringify({Username:$('username').value,Pw:$('password').value,App:"UniversalThemesWeb",Device:"Browser",DeviceId:"UniversalThemesWeb-Local",Version:"0.6.1"})});auth.token=r.AccessToken;auth.userId=r.User.Id;$('password').value='';$('login').hidden=true;$('app').hidden=false;build();}catch(e){$('loginStatus').textContent='Login failed: '+e.message;}};
 $('signout').onclick=()=>{auth.token=null;auth.userId=null;$('app').hidden=true;$('login').hidden=false;$('rows').replaceChildren();};
 document.querySelectorAll('[data-section]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-section]').forEach(x=>x.classList.toggle('selected',x===b));page.section=b.dataset.section;build();});
 let searchTimer;$('search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{page.query=$('search').value.trim();build();},450);};
