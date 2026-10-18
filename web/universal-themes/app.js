@@ -15,7 +15,7 @@ let selectedItem=null;
 function saveSession(){try{localStorage.setItem(sessionKey,JSON.stringify({token:auth.token,userId:auth.userId}));}catch(e){console.warn('Session could not be saved',e);}}
 function forgetSession(){try{localStorage.removeItem(sessionKey);}catch(e){}}
 
-function headers(){return {'Content-Type':'application/json',Authorization:`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.4.0", Token="${auth.token||''}"`};}
+function headers(){return {'Content-Type':'application/json',Authorization:`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.8.1", Token="${auth.token||''}"`};}
 function qs(o){return new URLSearchParams(Object.entries(o).filter(([,v])=>v!==undefined&&v!==null&&v!=='' )).toString();}
 async function api(path,options={}){const response=await fetch(base+path,{...options,headers:{...headers(),...(options.headers||{})}});if(!response.ok)throw new Error(`Jellyfin HTTP ${response.status} on ${path.split('?')[0]}`);return response.json();}
 async function imageBlob(id,kind='Primary',width=450){const r=await fetch(base+'/Items/'+encodeURIComponent(id)+'/Images/'+kind+'?'+qs({width,quality:85}),{headers:headers()});if(!r.ok)throw new Error('Image unavailable');return URL.createObjectURL(await r.blob());}
@@ -288,7 +288,7 @@ $('signout').onclick=async()=>{
  forgetSession();auth.token=null;auth.userId=null;
  state.libraries=[];state.library='';state.genre='';state.query='';
  $('app').hidden=true;$('login').hidden=false;$('rows').replaceChildren();$('username').value='';$('password').value='';
- if(token){try{await fetch(base+'/Sessions/Logout',{method:'POST',headers:{'Authorization':`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.4.0", Token="${token}"`}});}catch(e){console.warn('Server logout not confirmed',e);}}
+ if(token){try{await fetch(base+'/Sessions/Logout',{method:'POST',headers:{'Authorization':`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.8.1", Token="${token}"`}});}catch(e){console.warn('Server logout not confirmed',e);}}
 };
 async function restoreSession(){
  let saved;try{saved=JSON.parse(localStorage.getItem(sessionKey)||'null');}catch(e){forgetSession();return;}
@@ -386,7 +386,7 @@ async function utStartHls(){
  utHlsStatus.textContent='Asking Jellyfin to create a compatible stream…';
  try{
   const info=await api('/Items/'+encodeURIComponent(item.Id)+'/PlaybackInfo?'+qs({UserId:auth.userId}),{
-   method:'POST',body:JSON.stringify({UserId:auth.userId,StartTimeTicks:Math.round(previousPosition*10000000),EnableDirectPlay:false,EnableDirectStream:false,EnableTranscoding:true,AutoOpenLiveStream:true,DeviceProfile:utHlsProfile()})
+   method:'POST',body:JSON.stringify({UserId:auth.userId,StartTimeTicks:Math.round(previousPosition*10000000),EnableDirectPlay:false,EnableDirectStream:false,EnableTranscoding:true,AutoOpenLiveStream:true,MediaSourceId:oldPlayback.mediaSourceId,AudioStreamIndex:ut18AudioIndex===null?undefined:ut18AudioIndex,SubtitleStreamIndex:ut18SubtitleIndex>=0?ut18SubtitleIndex:-1,AlwaysBurnInSubtitleWhenTranscoding:ut18ShouldBurn(),AllowVideoStreamCopy:!ut18ShouldBurn(),DeviceProfile:ut18HlsProfile()})
   });
   const source=(info.MediaSources||[]).find(s=>s.TranscodingUrl) || (info.MediaSources||[])[0];
   if(!source?.TranscodingUrl)throw Error('Jellyfin did not supply an HLS TranscodingUrl. Check server transcoding permissions and logs.');
@@ -463,5 +463,102 @@ stopPlayer=function(){utClearAutoTimer();utAutoItemId=null;utAutoAttempted=false
 /* UT_AUTO_HLS_V16_END */
 
 
+
+/* UT_EMBEDDED_SUB_FIX_V181: bind source + selected subtitle; burn embedded subtitles into HLS. */
+function ut18ShouldBurn(){
+ const s=ut18MediaStreams.find(x=>x.Type==='Subtitle'&&x.Index===ut18SubtitleIndex);
+ return Boolean(s&&!s.IsExternal);
+}
+function ut18HlsProfile(){
+ const profile=utHlsProfile();
+ if(ut18ShouldBurn())profile.SubtitleProfiles=[];
+ return profile;
+}
+/* UT_TRACKS_V18_START: Jellyfin-aware audio/subtitle selection */
+const ut18StoreKey='utv18-language-preferences';
+let ut18Prefs={};
+try{ut18Prefs=JSON.parse(localStorage.getItem(ut18StoreKey)||'{}')||{};}catch(e){ut18Prefs={};}
+let ut18AudioIndex=null,ut18SubtitleIndex=-1,ut18MediaStreams=[];
+let ut18ChangeBusy=false;
+function ut18Save(){try{localStorage.setItem(ut18StoreKey,JSON.stringify(ut18Prefs));}catch(e){}}
+function ut18MatchSelection(streams,type,lang){return streams.find(s=>s.Type===type && (s.Language||'').toLowerCase()===lang)?.Index;}
+function ut18ApplyExternalSubtitle(){
+ const v=$('videoPlayer');
+ for(const t of [...v.querySelectorAll('track[data-ut]')])t.remove();
+ if(ut18SubtitleIndex<0)return;
+ const s=ut18MediaStreams.find(x=>x.Type==='Subtitle'&&x.Index===ut18SubtitleIndex);
+ const p=activePlayback;
+ if(!s?.IsExternal||s.IsTextSubtitleStream===false||!p)return;
+ const url=new URL(base+'/Videos/'+encodeURIComponent(p.itemId)+'/'+encodeURIComponent(p.mediaSourceId)+'/Subtitles/'+encodeURIComponent(s.Index)+'/Stream.vtt',location.origin);
+ url.searchParams.set('api_key',auth.token);
+ const tr=document.createElement('track');tr.dataset.ut='1';tr.kind='subtitles';tr.label=utStreamLabel(s);tr.srclang=s.Language||'en';tr.src=url.toString();tr.default=true;
+ v.append(tr);tr.addEventListener('load',()=>{try{tr.track.mode='showing';}catch(e){}});
+}
+async function ut18RefreshTracks(){
+ const current=activePlayback, stamp=++utTrackLoadId;
+ if(!current)return;
+ try{
+  const response=await api('/Items/'+encodeURIComponent(current.itemId)+'/PlaybackInfo?'+qs({UserId:auth.userId}),{method:'POST',body:JSON.stringify({UserId:auth.userId,EnableDirectPlay:true,EnableDirectStream:true,EnableTranscoding:true})});
+  if(stamp!==utTrackLoadId||activePlayback!==current)return;
+  const source=(response.MediaSources||[]).find(s=>s.Id===current.mediaSourceId)||(response.MediaSources||[])[0];
+  ut18MediaStreams=source?.MediaStreams||[];
+  const audio=ut18MediaStreams.filter(s=>s.Type==='Audio');
+  const subs=ut18MediaStreams.filter(s=>s.Type==='Subtitle');
+  // At the beginning of a new title use remembered languages, if available.
+  const prev=ut18AudioIndex;
+  if(prev===null&&ut18Prefs.audioLang)ut18AudioIndex=ut18MatchSelection(audio,'Audio',ut18Prefs.audioLang)??null;
+  if(ut18SubtitleIndex===-1&&ut18Prefs.subtitleLang)ut18SubtitleIndex=ut18MatchSelection(subs,'Subtitle',ut18Prefs.subtitleLang)??-1;
+  utAudio.replaceChildren();
+  utAudio.add(new Option('Default audio',''));
+  for(const s of audio)utAudio.add(new Option(utStreamLabel(s),String(s.Index)));
+  utAudio.value=ut18AudioIndex===null?'':String(ut18AudioIndex);
+  if(utAudio.selectedIndex<0)utAudio.value='';
+  utSub.replaceChildren(new Option('Off','-1'));
+  for(const s of subs)utSub.add(new Option(utStreamLabel(s)+(s.IsExternal?' (external)':' (embedded)'),String(s.Index)));
+  utSub.value=String(ut18SubtitleIndex);
+  if(utSub.selectedIndex<0)utSub.value='-1';
+  ut18ApplyExternalSubtitle();
+  utTrackInfo.textContent='Audio and embedded subtitles use Jellyfin HLS when changed. External text subtitles use WebVTT when available.';
+ }catch(e){if(stamp===utTrackLoadId)utTrackInfo.textContent='Track listing failed: '+e.message;}
+}
+async function ut18ChangeTracks(){
+ if(ut18ChangeBusy||!activePlayback)return;
+ ut18ChangeBusy=true;
+ const sub=ut18MediaStreams.find(s=>s.Type==='Subtitle'&&s.Index===ut18SubtitleIndex);
+ ut18ApplyExternalSubtitle();
+ // Embedded subtitles and changed audio must be selected at Jellyfin's transcoder.
+ try{
+  if(ut18AudioIndex!==null || (sub&&!sub.IsExternal)){
+   utTrackInfo.textContent='Switching stream through Jellyfin; keeping playback position…';
+   await utStartHls();
+   utTrackInfo.textContent=ut18ShouldBurn()?'Embedded subtitle burn-in requested from Jellyfin. If no text appears, check the server FFmpeg/transcoding log.':'Track selection requested. Confirm the language/subtitles are correct.';
+  }else{
+   utTrackInfo.textContent=sub?'External subtitles selected.':'Subtitles off / default audio selected.';
+  }
+ }finally{ut18ChangeBusy=false;}
+}
+utAudio.onchange=async()=>{
+ ut18AudioIndex=utAudio.value===''?null:Number(utAudio.value);
+ const s=ut18MediaStreams.find(x=>x.Type==='Audio'&&x.Index===ut18AudioIndex);
+ ut18Prefs.audioLang=s?.Language?.toLowerCase()||'';ut18Save();
+ await ut18ChangeTracks();
+};
+utSub.onchange=async()=>{
+ ut18SubtitleIndex=Number(utSub.value);
+ const s=ut18MediaStreams.find(x=>x.Type==='Subtitle'&&x.Index===ut18SubtitleIndex);
+ ut18Prefs.subtitleLang=s?.Language?.toLowerCase()||'';ut18Save();
+ await ut18ChangeTracks();
+};
+// Override v1.4 refresh and preserve the selections across stream reinitialisation.
+utRefreshTracks=ut18RefreshTracks;
+const ut18PrevPlay=playItem;
+playItem=async function(item){
+ ut18AudioIndex=null;ut18SubtitleIndex=-1;ut18MediaStreams=[];
+ await ut18PrevPlay(item);
+};
+$('videoPlayer').addEventListener('playing',()=>{
+ if(activePlayback&&!ut18MediaStreams.length)ut18RefreshTracks();
+});
+/* UT_TRACKS_V18_END */
 
 })();
