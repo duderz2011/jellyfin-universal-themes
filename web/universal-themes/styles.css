@@ -26,3 +26,6 @@
 .next-episode-buttons button:focus-visible{outline:3px solid #fff;outline-offset:2px}
 /* UT_ADVANCED_CSS_V14 */
 .ut-track-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px 5px}.ut-track-controls label{display:flex;gap:8px;align-items:center}.ut-track-controls select{max-width:245px}.ut-track-controls small{color:var(--muted);flex-basis:100%}
+
+/* v1.5 opt-in transcoding */
+.ut-hls-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:4px 5px 12px}.ut-hls-bar small{color:var(--muted)}.ut-hls-bar button{background:var(--panel);border:1px solid var(--accent)}.ut-hls-bar button:focus-visible{outline:3px solid white}

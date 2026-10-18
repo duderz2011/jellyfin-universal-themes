@@ -345,5 +345,66 @@ utAudio.onchange=()=>{
 $('videoPlayer').addEventListener('playing',()=>{if(activePlayback&&utAudio.options.length<=1)utRefreshTracks();});
 $('videoPlayer').addEventListener('emptied',()=>{utTrackLoadId++;utFreeTracks();});
 /* UT_ADVANCED_V14_END */
+/* UT_HLS_V15_START: Experimental, user-selected Jellyfin HLS transcoding. */
+let utHlsEngine=null;
+let utHlsCurrentItem=null;
+let utHlsLoading=false;
+const utHlsButton=$('utTryHls');
+const utHlsStatus=$('utHlsStatus');
+function utDestroyHls(){if(utHlsEngine){utHlsEngine.destroy();utHlsEngine=null;}}
+const utOriginalStopPlayer=stopPlayer;
+stopPlayer=function(){utDestroyHls();utHlsCurrentItem=null;utOriginalStopPlayer();};
+const utOriginalPlayItem=playItem;
+playItem=async function(item){utDestroyHls();utHlsCurrentItem=item;utHlsStatus.textContent='Direct playback is selected. Use HLS if this format fails.';return utOriginalPlayItem(item);};
+function utHlsProfile(){return {
+ MaxStreamingBitrate:12000000,
+ DirectPlayProfiles:[],
+ TranscodingProfiles:[{Container:'ts',Type:'Video',VideoCodec:'h264',AudioCodec:'aac',Protocol:'hls',Context:'Streaming',MaxAudioChannels:'2',MinSegments:1,SegmentLength:6,BreakOnNonKeyFrames:true}],
+ CodecProfiles:[],
+ SubtitleProfiles:[{Format:'vtt',Method:'External'}]
+};}
+async function utStartHls(){
+ if(utHlsLoading)return;
+ const p=activePlayback;
+ const item=utHlsCurrentItem;
+ if(!p||!item){utHlsStatus.textContent='Start a movie or episode before selecting HLS.';return;}
+ if(!window.Hls?.isSupported() && !$('videoPlayer').canPlayType('application/vnd.apple.mpegurl')){
+  utHlsStatus.textContent='HLS is unsupported here or hls.js did not load.';return;
+ }
+ utHlsLoading=true;utHlsButton.disabled=true;
+ const video=$('videoPlayer');
+ const previousPosition=Number.isFinite(video.currentTime)?video.currentTime:0;
+ const oldPlayback=activePlayback;
+ utHlsStatus.textContent='Asking Jellyfin to create a compatible stream…';
+ try{
+  const info=await api('/Items/'+encodeURIComponent(item.Id)+'/PlaybackInfo?'+qs({UserId:auth.userId}),{
+   method:'POST',body:JSON.stringify({UserId:auth.userId,StartTimeTicks:Math.round(previousPosition*10000000),EnableDirectPlay:false,EnableDirectStream:false,EnableTranscoding:true,AutoOpenLiveStream:true,DeviceProfile:utHlsProfile()})
+  });
+  const source=(info.MediaSources||[]).find(s=>s.TranscodingUrl) || (info.MediaSources||[])[0];
+  if(!source?.TranscodingUrl)throw Error('Jellyfin did not supply an HLS TranscodingUrl. Check server transcoding permissions and logs.');
+  const url=new URL(source.TranscodingUrl,location.origin);
+  if(url.origin!==location.origin)throw Error('Unexpected transcoding URL origin.');
+  if(!url.searchParams.has('api_key'))url.searchParams.set('api_key',auth.token);
+  utDestroyHls();
+  if(activePlayback){await reportPlayback('/Stopped');activePlayback=null;}
+  clearPlaybackTimer();
+  video.pause();video.removeAttribute('src');video.load();
+  activePlayback={itemId:item.Id,mediaSourceId:source.Id||oldPlayback.mediaSourceId,playSessionId:info.PlaySessionId||oldPlayback.playSessionId,playMethod:'Transcode'};
+  const resume=()=>{if(previousPosition>5 && Number.isFinite(video.duration) && video.duration>previousPosition+10)video.currentTime=previousPosition;video.play().catch(()=>{utHlsStatus.textContent='HLS stream ready. Press Play.';});};
+  if(video.canPlayType('application/vnd.apple.mpegurl')){
+   video.src=url.toString();video.addEventListener('loadedmetadata',resume,{once:true});video.load();
+  }else{
+   utHlsEngine=new Hls({enableWorker:true,maxBufferLength:30});
+   utHlsEngine.on(Hls.Events.ERROR,(_event,data)=>{if(data.fatal){utHlsStatus.textContent='HLS error: '+data.details+' — see Jellyfin server logs.';}});
+   utHlsEngine.on(Hls.Events.MANIFEST_PARSED,resume);
+   utHlsEngine.loadSource(url.toString());utHlsEngine.attachMedia(video);
+  }
+  utHlsStatus.textContent='Jellyfin HLS/transcoding test active.';
+ }catch(e){utHlsStatus.textContent='Transcoding unavailable: '+e.message;console.warn('Jellyfin HLS failed',e);}
+ finally{utHlsLoading=false;utHlsButton.disabled=false;}
+}
+utHlsButton.addEventListener('click',utStartHls);
+/* UT_HLS_V15_END */
+
 
 })();
