@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>Jellyfin.Plugin.UniversalThemes</name>
+    </assembly>
+    <members>
+        <member name="T:Jellyfin.Plugin.UniversalThemes.Configuration.PluginConfiguration">
+            <summary>Persistent preferences, independent of the library's physical storage.</summary>
+        </member>
+        <member name="T:Jellyfin.Plugin.UniversalThemes.Plugin">
+            <summary>Holds server-side genre and theme configuration; does not modify library paths.</summary>
+        </member>
+    </members>
+</doc>
