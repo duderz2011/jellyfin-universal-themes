@@ -15,7 +15,7 @@ let selectedItem=null;
 function saveSession(){try{localStorage.setItem(sessionKey,JSON.stringify({token:auth.token,userId:auth.userId}));}catch(e){console.warn('Session could not be saved',e);}}
 function forgetSession(){try{localStorage.removeItem(sessionKey);}catch(e){}}
 
-function headers(){return {'Content-Type':'application/json',Authorization:`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.2.0", Token="${auth.token||''}"`};}
+function headers(){return {'Content-Type':'application/json',Authorization:`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.3.0", Token="${auth.token||''}"`};}
 function qs(o){return new URLSearchParams(Object.entries(o).filter(([,v])=>v!==undefined&&v!==null&&v!=='' )).toString();}
 async function api(path,options={}){const response=await fetch(base+path,{...options,headers:{...headers(),...(options.headers||{})}});if(!response.ok)throw new Error(`Jellyfin HTTP ${response.status} on ${path.split('?')[0]}`);return response.json();}
 async function imageBlob(id,kind='Primary',width=450){const r=await fetch(base+'/Items/'+encodeURIComponent(id)+'/Images/'+kind+'?'+qs({width,quality:85}),{headers:headers()});if(!r.ok)throw new Error('Image unavailable');return URL.createObjectURL(await r.blob());}
@@ -145,21 +145,55 @@ playbackVideo.addEventListener('playing',()=>{
 playbackVideo.addEventListener('pause',()=>{if(activePlayback)reportPlayback('/Progress');clearPlaybackTimer();});
 playbackVideo.addEventListener('seeked',()=>{if(activePlayback)reportPlayback('/Progress');});
 /* Mark the completed item stopped on Jellyfin before starting another episode. */
-playbackVideo.addEventListener('ended',async()=>{
- const finished=activePlayback?.itemId;
- const possibleNext=nextEpisodePromise;
- clearPlaybackTimer();
- if(activePlayback){await reportPlayback('/Stopped');activePlayback=null;}
- const v=$('videoPlayer');v.pause();v.removeAttribute('src');v.load();
- let next=null;
- try{next=await possibleNext;}catch(e){console.warn('Next episode lookup failed',e);}
- if(!finished || !next || !auth.token){if($('player').open)$('player').close();refreshHomeProgress();return;}
- nextEpisodePending=true;
- $('playerTitle').textContent='Up next: '+(next.SeriesName||'')+' '+(next.Name||'');
- $('playerStatus').textContent='Starting next episode…';
- await playItem(next);
- nextEpisodePending=false;
+/* Universal Themes v1.3 next-episode countdown */
+let nextCountdownTimer = null;
+let pendingEpisode = null;
+function clearNextCountdown() {
+ if (nextCountdownTimer !== null) { clearInterval(nextCountdownTimer); nextCountdownTimer = null; }
+ pendingEpisode = null;
+ $('nextEpisodePrompt').hidden = true;
+}
+async function startPendingEpisode() {
+ const episode = pendingEpisode;
+ if (!episode) return;
+ clearNextCountdown();
+ $('playerStatus').textContent = 'Loading next episodeâ€¦';
+ await playItem(episode);
  refreshHomeProgress();
+}
+$('playNextNow').onclick = startPendingEpisode;
+$('cancelNext').onclick = () => {
+ clearNextCountdown();
+ if ($('player').open) $('player').close();
+ refreshHomeProgress();
+};
+const originalStopPlayer = stopPlayer;
+stopPlayer = function () { clearNextCountdown(); originalStopPlayer(); };
+playbackVideo.addEventListener('ended', async () => {
+ const finished = activePlayback?.itemId;
+ const possibleNext = nextEpisodePromise;
+ clearPlaybackTimer();
+ if (activePlayback) { await reportPlayback('/Stopped'); activePlayback = null; }
+ const v = $('videoPlayer'); v.pause(); v.removeAttribute('src'); v.load();
+ let next = null;
+ try { next = await possibleNext; } catch (e) { console.warn('Next episode lookup failed',e); }
+ if (!finished || !next || !auth.token || !$('player').open) {
+  if ($('player').open) $('player').close(); refreshHomeProgress(); return;
+ }
+ clearNextCountdown();
+ pendingEpisode = next;
+ const title = [next.SeriesName,next.ParentIndexNumber != null ? 'S'+next.ParentIndexNumber : '',next.IndexNumber != null ? 'E'+next.IndexNumber : '',next.Name].filter(Boolean).join(' Â· ');
+ $('nextEpisodeTitle').textContent = 'Up next: ' + title;
+ $('nextEpisodePrompt').hidden = false;
+ let seconds = 8;
+ $('nextEpisodeCountdown').textContent = 'Starting in ' + seconds + ' secondsâ€¦';
+ nextCountdownTimer = setInterval(() => {
+  if (document.hidden) return;
+  seconds--;
+  $('nextEpisodeCountdown').textContent = 'Starting in ' + seconds + ' secondsâ€¦';
+  if (seconds <= 0) { startPendingEpisode(); }
+ },1000);
+ $('playNextNow').focus();
 });
 playbackVideo.addEventListener('error',()=>{$('playerStatus').textContent='Unable to play this format directly. A Jellyfin transcoding-capable player is still needed for unsupported codecs.';});
 
@@ -254,7 +288,7 @@ $('signout').onclick=async()=>{
  forgetSession();auth.token=null;auth.userId=null;
  state.libraries=[];state.library='';state.genre='';state.query='';
  $('app').hidden=true;$('login').hidden=false;$('rows').replaceChildren();$('username').value='';$('password').value='';
- if(token){try{await fetch(base+'/Sessions/Logout',{method:'POST',headers:{'Authorization':`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.2.0", Token="${token}"`}});}catch(e){console.warn('Server logout not confirmed',e);}}
+ if(token){try{await fetch(base+'/Sessions/Logout',{method:'POST',headers:{'Authorization':`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.3.0", Token="${token}"`}});}catch(e){console.warn('Server logout not confirmed',e);}}
 };
 async function restoreSession(){
  let saved;try{saved=JSON.parse(localStorage.getItem(sessionKey)||'null');}catch(e){forgetSession();return;}

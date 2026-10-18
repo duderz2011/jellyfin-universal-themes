@@ -15,3 +15,12 @@
 
 /* v1.2: visually distinguish progress and next-up rows while retaining theme variables */
 .shelf:has(.tile) h2{letter-spacing:.01em}
+
+/* Universal Themes v1.3: next episode controls */
+.next-episode-prompt{background:var(--panel);border:1px solid #ffffff55;border-radius:9px;padding:16px;margin:4px 0 13px;display:flex;flex-wrap:wrap;align-items:center;gap:14px}
+.next-episode-prompt[hidden]{display:none!important}
+.next-episode-prompt strong{font-size:1rem;flex-basis:100%}
+.next-episode-prompt span{color:var(--muted)}
+.next-episode-buttons{margin-left:auto;display:flex;gap:9px}
+.next-episode-buttons #cancelNext{background:#474753}
+.next-episode-buttons button:focus-visible{outline:3px solid #fff;outline-offset:2px}
