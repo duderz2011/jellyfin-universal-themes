@@ -12,3 +12,6 @@
 .player-dialog{padding:12px;width:min(1120px,96vw);max-width:96vw;max-height:96vh}
 .player-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 8px 12px}
 .player-dialog video{display:block;width:100%;max-height:78vh;background:#000}
+
+/* v1.2: visually distinguish progress and next-up rows while retaining theme variables */
+.shelf:has(.tile) h2{letter-spacing:.01em}
