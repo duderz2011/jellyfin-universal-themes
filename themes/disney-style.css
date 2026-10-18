@@ -1,0 +1,2 @@
+/* Disney+-inspired custom Jellyfin WEB CSS — not an official Disney theme. */
+:root{--ut-accent:#80a7ff;--ut-bg:#060d29}body,.backgroundContainer,.skinBody{background:#060d29!important}.emby-button.button-submit,.button-submit,.raised.button-submit{background:var(--ut-accent)!important}.cardBox{border-radius:12px;overflow:hidden}.card:hover{transform:scale(1.03);transition:transform .18s ease}.headerTop{background:#0d1742f0!important}

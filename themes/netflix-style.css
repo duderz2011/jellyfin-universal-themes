@@ -1,0 +1,2 @@
+/* Netflix-inspired custom Jellyfin WEB CSS — not an official Netflix theme. */
+:root{--ut-accent:#e50914;--ut-bg:#101015}body,.backgroundContainer,.skinBody{background:#101015!important}.emby-button.button-submit,.button-submit,.raised.button-submit{background:var(--ut-accent)!important}.card:hover{transform:scale(1.035);transition:transform .18s ease}.cardBox{border-radius:6px;overflow:hidden}.headerTop{background:#15151adf!important}

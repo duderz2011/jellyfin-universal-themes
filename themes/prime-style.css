@@ -1,0 +1,2 @@
+/* Prime-inspired custom Jellyfin WEB CSS — not an official Amazon Prime theme. */
+:root{--ut-accent:#17b9ef;--ut-bg:#071927}body,.backgroundContainer,.skinBody{background:#071927!important}.emby-button.button-submit,.button-submit,.raised.button-submit{background:var(--ut-accent)!important}.cardBox{border-radius:6px;overflow:hidden}.card:hover{transform:scale(1.025);transition:transform .18s ease}.headerTop{background:#112b3fef!important}
