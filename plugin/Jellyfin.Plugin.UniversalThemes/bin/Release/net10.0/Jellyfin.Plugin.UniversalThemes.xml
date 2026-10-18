@@ -5,10 +5,37 @@
     </assembly>
     <members>
         <member name="T:Jellyfin.Plugin.UniversalThemes.Configuration.PluginConfiguration">
-            <summary>Persistent preferences, independent of the library's physical storage.</summary>
+            <summary>Preferences only; never changes physical media paths.</summary>
+        </member>
+        <member name="P:Jellyfin.Plugin.UniversalThemes.Configuration.PluginConfiguration.ThemeId">
+            <summary>Selected web theme ID.</summary>
+        </member>
+        <member name="P:Jellyfin.Plugin.UniversalThemes.Configuration.PluginConfiguration.DisplayGenres">
+            <summary>Ordered display genre names.</summary>
         </member>
         <member name="T:Jellyfin.Plugin.UniversalThemes.Plugin">
-            <summary>Holds server-side genre and theme configuration; does not modify library paths.</summary>
+            <summary>Stores preferences and supplies the server dashboard configuration page.</summary>
+        </member>
+        <member name="F:Jellyfin.Plugin.UniversalThemes.Plugin.PluginId">
+            <summary>Stable plugin identifier.</summary>
+        </member>
+        <member name="M:Jellyfin.Plugin.UniversalThemes.Plugin.#ctor(MediaBrowser.Common.Configuration.IApplicationPaths,MediaBrowser.Model.Serialization.IXmlSerializer)">
+            <summary>Creates the plugin.</summary>
+        </member>
+        <member name="P:Jellyfin.Plugin.UniversalThemes.Plugin.Instance">
+            <summary>Current plugin instance.</summary>
+        </member>
+        <member name="P:Jellyfin.Plugin.UniversalThemes.Plugin.Name">
+            <inheritdoc />
+        </member>
+        <member name="P:Jellyfin.Plugin.UniversalThemes.Plugin.Id">
+            <inheritdoc />
+        </member>
+        <member name="P:Jellyfin.Plugin.UniversalThemes.Plugin.Description">
+            <inheritdoc />
+        </member>
+        <member name="M:Jellyfin.Plugin.UniversalThemes.Plugin.GetPages">
+            <summary>Provides the configuration page to Jellyfin's dashboard.</summary>
         </member>
     </members>
 </doc>
