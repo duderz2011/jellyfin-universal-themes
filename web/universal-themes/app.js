@@ -386,7 +386,7 @@ async function utStartHls(){
  utHlsStatus.textContent='Asking Jellyfin to create a compatible stream…';
  try{
   const info=await api('/Items/'+encodeURIComponent(item.Id)+'/PlaybackInfo?'+qs({UserId:auth.userId}),{
-   method:'POST',body:JSON.stringify({UserId:auth.userId,StartTimeTicks:Math.round(previousPosition*10000000),EnableDirectPlay:false,EnableDirectStream:false,EnableTranscoding:true,AutoOpenLiveStream:true,MediaSourceId:oldPlayback.mediaSourceId,AudioStreamIndex:ut18AudioIndex===null?undefined:ut18AudioIndex,SubtitleStreamIndex:ut18SubtitleIndex>=0?ut18SubtitleIndex:-1,AlwaysBurnInSubtitleWhenTranscoding:ut18ShouldBurn(),AllowVideoStreamCopy:!ut18ShouldBurn(),DeviceProfile:ut18HlsProfile()})
+   method:'POST',body:JSON.stringify({UserId:auth.userId,StartTimeTicks:Math.round(previousPosition*10000000),EnableDirectPlay:false,EnableDirectStream:false,EnableTranscoding:true,AutoOpenLiveStream:true,MediaSourceId:oldPlayback.mediaSourceId,AudioStreamIndex:ut18AudioIndex===null?undefined:ut18AudioIndex,SubtitleStreamIndex:-1,AlwaysBurnInSubtitleWhenTranscoding:false,AllowVideoStreamCopy:true,DeviceProfile:ut18HlsProfile()})
   });
   const source=(info.MediaSources||[]).find(s=>s.TranscodingUrl) || (info.MediaSources||[])[0];
   if(!source?.TranscodingUrl)throw Error('Jellyfin did not supply an HLS TranscodingUrl. Check server transcoding permissions and logs.');
@@ -482,19 +482,43 @@ let ut18AudioIndex=null,ut18SubtitleIndex=-1,ut18MediaStreams=[];
 let ut18ChangeBusy=false;
 function ut18Save(){try{localStorage.setItem(ut18StoreKey,JSON.stringify(ut18Prefs));}catch(e){}}
 function ut18MatchSelection(streams,type,lang){return streams.find(s=>s.Type===type && (s.Language||'').toLowerCase()===lang)?.Index;}
-function ut18ApplyExternalSubtitle(){
+/* UT_SUBTITLE_SAFE_V182: render text subtitles using Jellyfin WebVTT endpoint; never restart video for subtitles. */
+let ut182SubtitleSeq=0;
+let ut182SubtitleUrl=null;
+function ut182RemoveSubtitle(){
+ ut182SubtitleSeq++;
  const v=$('videoPlayer');
- for(const t of [...v.querySelectorAll('track[data-ut]')])t.remove();
- if(ut18SubtitleIndex<0)return;
- const s=ut18MediaStreams.find(x=>x.Type==='Subtitle'&&x.Index===ut18SubtitleIndex);
- const p=activePlayback;
- if(!s?.IsExternal||s.IsTextSubtitleStream===false||!p)return;
- const url=new URL(base+'/Videos/'+encodeURIComponent(p.itemId)+'/'+encodeURIComponent(p.mediaSourceId)+'/Subtitles/'+encodeURIComponent(s.Index)+'/Stream.vtt',location.origin);
- url.searchParams.set('api_key',auth.token);
- const tr=document.createElement('track');tr.dataset.ut='1';tr.kind='subtitles';tr.label=utStreamLabel(s);tr.srclang=s.Language||'en';tr.src=url.toString();tr.default=true;
- v.append(tr);tr.addEventListener('load',()=>{try{tr.track.mode='showing';}catch(e){}});
+ for(const tr of [...v.querySelectorAll('track[data-ut]')])tr.remove();
+ if(ut182SubtitleUrl){URL.revokeObjectURL(ut182SubtitleUrl);ut182SubtitleUrl=null;}
 }
-async function ut18RefreshTracks(){
+async function ut18ApplyExternalSubtitle(){
+ ut182RemoveSubtitle();
+ const seq=ut182SubtitleSeq;
+ if(ut18SubtitleIndex<0)return;
+ const sub=ut18MediaStreams.find(x=>x.Type==='Subtitle' && x.Index===ut18SubtitleIndex);
+ const p=activePlayback;
+ if(!sub||!p)return;
+ const codec=(sub.Codec||'').toLowerCase();
+ if(sub.IsTextSubtitleStream===false || ['pgs','pgssub','hdmv_pgs_subtitle','dvdsub','dvd_subtitle','dvbsub','vobsub'].includes(codec)){
+  utTrackInfo.textContent='This is a picture-based subtitle track ('+(sub.Codec||'unknown')+'). WebVTT conversion is not supported. Video continues playing normally.';
+  return;
+ }
+ const path='/Videos/'+encodeURIComponent(p.itemId)+'/'+encodeURIComponent(p.mediaSourceId)+'/Subtitles/'+encodeURIComponent(sub.Index)+'/Stream.vtt';
+ utTrackInfo.textContent='Loading '+(sub.DisplayTitle||sub.Language||'subtitle')+' as WebVTTâ€¦';
+ try{
+  const response=await fetch(base+path,{headers:headers()});
+  if(!response.ok)throw Error('HTTP '+response.status);
+  const contents=await response.text();
+  if(!/^\uFEFF?WEBVTT(?:\s|$)/.test(contents.trimStart()))throw Error('Jellyfin did not return WebVTT subtitle text');
+  if(seq!==ut182SubtitleSeq || p!==activePlayback)return;
+  const url=URL.createObjectURL(new Blob([contents],{type:'text/vtt'}));
+  ut182SubtitleUrl=url;
+  const tr=document.createElement('track');tr.dataset.ut='1';tr.kind='subtitles';tr.label=utStreamLabel(sub);tr.srclang=sub.Language||'en';tr.src=url;tr.default=true;
+  $('videoPlayer').append(tr);
+  tr.addEventListener('load',()=>{if(seq!==ut182SubtitleSeq)return;try{tr.track.mode='showing';utTrackInfo.textContent='Subtitle loaded: '+utStreamLabel(sub);}catch(e){}},{once:true});
+  tr.addEventListener('error',()=>{if(seq===ut182SubtitleSeq)utTrackInfo.textContent='Browser could not display the returned WebVTT track.';},{once:true});
+ }catch(err){if(seq===ut182SubtitleSeq)utTrackInfo.textContent='Subtitle conversion unavailable: '+err.message+'. Playback has not been changed.';}
+}async function ut18RefreshTracks(){
  const current=activePlayback, stamp=++utTrackLoadId;
  if(!current)return;
  try{
@@ -518,22 +542,22 @@ async function ut18RefreshTracks(){
   utSub.value=String(ut18SubtitleIndex);
   if(utSub.selectedIndex<0)utSub.value='-1';
   ut18ApplyExternalSubtitle();
-  utTrackInfo.textContent='Audio and embedded subtitles use Jellyfin HLS when changed. External text subtitles use WebVTT when available.';
+  utTrackInfo.textContent='Audio changes use Jellyfin HLS; text subtitles use WebVTT without restarting playback. Picture subtitles are not yet supported.';
  }catch(e){if(stamp===utTrackLoadId)utTrackInfo.textContent='Track listing failed: '+e.message;}
 }
-async function ut18ChangeTracks(){
+async function ut18ChangeTracks(allowHls=false){
  if(ut18ChangeBusy||!activePlayback)return;
  ut18ChangeBusy=true;
  const sub=ut18MediaStreams.find(s=>s.Type==='Subtitle'&&s.Index===ut18SubtitleIndex);
- ut18ApplyExternalSubtitle();
- // Embedded subtitles and changed audio must be selected at Jellyfin's transcoder.
+ await ut18ApplyExternalSubtitle();
+ // Only changed audio requires HLS; subtitle changes must never restart video.
  try{
-  if(ut18AudioIndex!==null || (sub&&!sub.IsExternal)){
+  if(allowHls && ut18AudioIndex!==null){
    utTrackInfo.textContent='Switching stream through Jellyfin; keeping playback position…';
    await utStartHls();
-   utTrackInfo.textContent=ut18ShouldBurn()?'Embedded subtitle burn-in requested from Jellyfin. If no text appears, check the server FFmpeg/transcoding log.':'Track selection requested. Confirm the language/subtitles are correct.';
+   utTrackInfo.textContent='Audio switching requested. Subtitle WebVTT is independent of HLS.';
   }else{
-   utTrackInfo.textContent=sub?'External subtitles selected.':'Subtitles off / default audio selected.';
+   if(!sub)utTrackInfo.textContent='Subtitles off / default audio selected.';
   }
  }finally{ut18ChangeBusy=false;}
 }
