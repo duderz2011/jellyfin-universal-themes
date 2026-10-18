@@ -1,0 +1,73 @@
+<div id="UniversalThemesConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select">
+  <div data-role="content">
+    <div class="content-primary">
+      <h2>Universal Themes &amp; Genres</h2>
+      <p>Choose the preferred theme and the ordered genres used by future compatible clients. Saving these settings does not change movie or TV file locations.</p>
+      <form id="universalThemesForm">
+        <div class="selectContainer">
+          <label class="selectLabel" for="universalThemeChoice">Preferred theme</label>
+          <select is="emby-select" id="universalThemeChoice" class="emby-select-withcolor emby-select">
+            <option value="cinema-dark">Cinema Dark</option>
+            <option value="ocean-blue">Ocean Blue</option>
+            <option value="midnight-purple">Midnight Purple</option>
+          </select>
+          <div class="fieldDescription">A preference for compatible clients. It does not automatically install CSS into web clients or restyle native apps.</div>
+        </div>
+        <div class="inputContainer">
+          <label class="inputLabel" for="universalGenres">Display genres (one per line, in display order)</label>
+          <textarea id="universalGenres" rows="12" class="emby-input" style="width:100%;box-sizing:border-box"></textarea>
+          <div class="fieldDescription">These are metadata genre names, not library directories. Library files remain untouched.</div>
+        </div>
+        <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Save preferences</span></button>
+        <p id="universalThemesStatus" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </div>
+  <script type="text/javascript">
+    (function () {
+      'use strict';
+      const page = document.querySelector('#UniversalThemesConfigPage');
+      const pluginId = '2fb88a53-c9ef-4558-aad8-d3f6ab1d7491';
+      const theme = page.querySelector('#universalThemeChoice');
+      const genres = page.querySelector('#universalGenres');
+      const status = page.querySelector('#universalThemesStatus');
+      let config = null;
+      let loading = false;
+
+      async function load() {
+        if (loading) return;
+        loading = true;
+        status.textContent = 'Loading preferences…';
+        try {
+          config = await ApiClient.getPluginConfiguration(pluginId);
+          theme.value = config.ThemeId || 'cinema-dark';
+          genres.value = (config.DisplayGenres || []).join('\n');
+          status.textContent = '';
+        } catch (err) {
+          status.textContent = 'Unable to load plugin settings: ' + (err.message || err);
+        } finally { loading = false; }
+      }
+
+      page.addEventListener('pageshow', load);
+      page.querySelector('#universalThemesForm').addEventListener('submit', async function (event) {
+        event.preventDefault();
+        if (!config) { status.textContent = 'Settings have not loaded.'; return; }
+        const lines = genres.value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+        const unique = [...new Set(lines)];
+        if (unique.length < 1 || unique.length > 100) {
+          status.textContent = 'Enter between 1 and 100 genres.';
+          return;
+        }
+        const newConfig = Object.assign({}, config, { ThemeId: theme.value, DisplayGenres: unique });
+        status.textContent = 'Saving…';
+        try {
+          await ApiClient.updatePluginConfiguration(pluginId, newConfig);
+          config = newConfig;
+          status.textContent = 'Preferences saved.';
+        } catch (err) {
+          status.textContent = 'Save failed: ' + (err.message || err);
+        }
+      });
+    })();
+  </script>
+</div>
