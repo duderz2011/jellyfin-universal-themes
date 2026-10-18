@@ -24,3 +24,5 @@
 .next-episode-buttons{margin-left:auto;display:flex;gap:9px}
 .next-episode-buttons #cancelNext{background:#474753}
 .next-episode-buttons button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+/* UT_ADVANCED_CSS_V14 */
+.ut-track-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px 5px}.ut-track-controls label{display:flex;gap:8px;align-items:center}.ut-track-controls select{max-width:245px}.ut-track-controls small{color:var(--muted);flex-basis:100%}

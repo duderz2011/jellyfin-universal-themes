@@ -15,7 +15,7 @@ let selectedItem=null;
 function saveSession(){try{localStorage.setItem(sessionKey,JSON.stringify({token:auth.token,userId:auth.userId}));}catch(e){console.warn('Session could not be saved',e);}}
 function forgetSession(){try{localStorage.removeItem(sessionKey);}catch(e){}}
 
-function headers(){return {'Content-Type':'application/json',Authorization:`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.3.0", Token="${auth.token||''}"`};}
+function headers(){return {'Content-Type':'application/json',Authorization:`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.4.0", Token="${auth.token||''}"`};}
 function qs(o){return new URLSearchParams(Object.entries(o).filter(([,v])=>v!==undefined&&v!==null&&v!=='' )).toString();}
 async function api(path,options={}){const response=await fetch(base+path,{...options,headers:{...headers(),...(options.headers||{})}});if(!response.ok)throw new Error(`Jellyfin HTTP ${response.status} on ${path.split('?')[0]}`);return response.json();}
 async function imageBlob(id,kind='Primary',width=450){const r=await fetch(base+'/Items/'+encodeURIComponent(id)+'/Images/'+kind+'?'+qs({width,quality:85}),{headers:headers()});if(!r.ok)throw new Error('Image unavailable');return URL.createObjectURL(await r.blob());}
@@ -288,7 +288,7 @@ $('signout').onclick=async()=>{
  forgetSession();auth.token=null;auth.userId=null;
  state.libraries=[];state.library='';state.genre='';state.query='';
  $('app').hidden=true;$('login').hidden=false;$('rows').replaceChildren();$('username').value='';$('password').value='';
- if(token){try{await fetch(base+'/Sessions/Logout',{method:'POST',headers:{'Authorization':`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.3.0", Token="${token}"`}});}catch(e){console.warn('Server logout not confirmed',e);}}
+ if(token){try{await fetch(base+'/Sessions/Logout',{method:'POST',headers:{'Authorization':`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.4.0", Token="${token}"`}});}catch(e){console.warn('Server logout not confirmed',e);}}
 };
 async function restoreSession(){
  let saved;try{saved=JSON.parse(localStorage.getItem(sessionKey)||'null');}catch(e){forgetSession();return;}
@@ -303,4 +303,47 @@ restoreSession();
 $('genreSelect').onchange=()=>{state.genre=$('genreSelect').value;state.page=0;render();};
 let debounce;$('search').oninput=()=>{clearTimeout(debounce);debounce=setTimeout(()=>{state.query=$('search').value.trim();state.page=0;render();},400);};
 $('theme').onchange=()=>{document.body.dataset.theme=themes.has($('theme').value)?$('theme').value:'netflix-style';};
+/* UT_ADVANCED_V14_START: browser subtitle and audio-track controls */
+let utTrackLoadId=0;
+const utAudio=$('utAudioTrack'),utSub=$('utSubtitleTrack'),utTrackInfo=$('utTrackInfo');
+const utTrackUrls=[];
+function utFreeTracks(){for(const u of utTrackUrls)URL.revokeObjectURL(u);utTrackUrls.length=0;const v=$('videoPlayer');for(const t of [...v.querySelectorAll('track[data-ut]')])t.remove();utAudio.replaceChildren(new Option('Default audio',''));utSub.replaceChildren(new Option('Off',''));utTrackInfo.textContent='';}
+function utStreamLabel(stream){return [stream.DisplayTitle,stream.Language,stream.Codec,stream.Channels?stream.Channels+'ch':''].filter(Boolean).join(' · ') || 'Track '+stream.Index;}
+async function utRefreshTracks(){
+ const current=activePlayback,stamp=++utTrackLoadId;
+ utFreeTracks();
+ if(!current)return;
+ try{
+  const response=await api('/Items/'+encodeURIComponent(current.itemId)+'/PlaybackInfo?'+qs({UserId:auth.userId}),{method:'POST',body:JSON.stringify({UserId:auth.userId,EnableDirectPlay:true,EnableDirectStream:true,EnableTranscoding:true})});
+  if(stamp!==utTrackLoadId||activePlayback!==current)return;
+  const source=(response.MediaSources||[]).find(s=>s.Id===current.mediaSourceId)||(response.MediaSources||[])[0];
+  const streams=source?.MediaStreams||[];
+  const audio=streams.filter(s=>s.Type==='Audio'), subs=streams.filter(s=>s.Type==='Subtitle');
+  utAudio.replaceChildren();
+  for(const s of audio)utAudio.add(new Option(utStreamLabel(s),String(s.Index)));
+  if(!audio.length)utAudio.add(new Option('Default audio',''));
+  for(const s of subs){if(s.IsExternal && s.IsTextSubtitleStream!==false)utSub.add(new Option(utStreamLabel(s),String(s.Index)));}
+  utTrackInfo.textContent='External text subtitles can be selected here. Embedded audio switching depends on the browser. Unsupported video formats may require a transcoding player.';
+ }catch(e){if(stamp===utTrackLoadId)utTrackInfo.textContent='Unable to load track information: '+e.message;}
+}
+utSub.onchange=()=>{
+ const v=$('videoPlayer');for(const t of [...v.querySelectorAll('track[data-ut]')])t.remove();
+ if(!utSub.value)return;
+ const p=activePlayback;if(!p)return;
+ const url=new URL(base+'/Videos/'+encodeURIComponent(p.itemId)+'/'+encodeURIComponent(p.mediaSourceId)+'/Subtitles/'+encodeURIComponent(utSub.value)+'/Stream.vtt',location.origin);
+ url.searchParams.set('api_key',auth.token);
+ const tr=document.createElement('track');tr.dataset.ut='1';tr.kind='subtitles';tr.label=utSub.options[utSub.selectedIndex].text;tr.srclang='en';tr.src=url.toString();tr.default=true;v.append(tr);
+ tr.addEventListener('load',()=>{try{tr.track.mode='showing';}catch(e){}});
+};
+utAudio.onchange=()=>{
+ const tracks=$('videoPlayer').audioTracks;
+ if(!tracks||!tracks.length){utTrackInfo.textContent='This browser cannot switch embedded audio tracks. A Jellyfin transcoding/HLS player is required for reliable switching.';return;}
+ const index=Number(utAudio.value);let found=false;
+ for(let i=0;i<tracks.length;i++){const t=tracks[i];const match=t.id===String(index)||i===utAudio.selectedIndex;t.enabled=match;found=found||match;}
+ utTrackInfo.textContent=found?'Audio track selection requested.':'No matching browser audio track is exposed.';
+};
+$('videoPlayer').addEventListener('playing',()=>{if(activePlayback&&utAudio.options.length<=1)utRefreshTracks();});
+$('videoPlayer').addEventListener('emptied',()=>{utTrackLoadId++;utFreeTracks();});
+/* UT_ADVANCED_V14_END */
+
 })();
