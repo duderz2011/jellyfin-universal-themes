@@ -1,72 +1,132 @@
 <div id="UniversalThemesConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select">
-  <div data-role="content">
-    <div class="content-primary">
-      <h2>Universal Themes &amp; Genres</h2>
-      <p>Choose the preferred theme and the ordered genres used by future compatible clients. Saving these settings does not change movie or TV file locations.</p>
-      <form id="universalThemesForm">
-        <div class="selectContainer">
-          <label class="selectLabel" for="universalThemeChoice">Preferred theme</label>
-          <select is="emby-select" id="universalThemeChoice" class="emby-select-withcolor emby-select">
-            <option value="cinema-dark">Cinema Dark</option>
-            <option value="ocean-blue">Ocean Blue</option>
-            <option value="midnight-purple">Midnight Purple</option>
-          </select>
-          <div class="fieldDescription">A preference for compatible clients. It does not automatically install CSS into web clients or restyle native apps.</div>
-        </div>
-        <div class="inputContainer">
-          <label class="inputLabel" for="universalGenres">Display genres (one per line, in display order)</label>
-          <textarea id="universalGenres" rows="12" class="emby-input" style="width:100%;box-sizing:border-box"></textarea>
-          <div class="fieldDescription">These are metadata genre names, not library directories. Library files remain untouched.</div>
-        </div>
-        <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Save preferences</span></button>
-        <p id="universalThemesStatus" role="status" aria-live="polite"></p>
-      </form>
+  <div data-role="content"><div class="content-primary">
+    <h2>Universal Themes &amp; Genres — v0.5</h2>
+    <p>Manage the preferred theme and search movies or TV shows by existing Jellyfin metadata. This page does not move, rename, or edit media files.</p>
+    <form id="universalThemesForm">
+      <div class="selectContainer">
+        <label class="selectLabel" for="universalThemeChoice">Preferred theme</label>
+        <select is="emby-select" id="universalThemeChoice" class="emby-select-withcolor emby-select">
+          <option value="cinema-dark">Cinema Dark</option><option value="ocean-blue">Ocean Blue</option><option value="midnight-purple">Midnight Purple</option>
+        </select>
+        <div class="fieldDescription">Theme selection is saved for future compatible clients. Official native apps cannot be restyled by server CSS.</div>
+      </div>
+      <div class="inputContainer">
+        <label class="inputLabel" for="universalGenres">Display genres (one per line, in display order)</label>
+        <textarea id="universalGenres" rows="10" class="emby-input" style="width:100%;box-sizing:border-box"></textarea>
+        <div class="fieldDescription">Uses metadata genre labels. Movies and shows remain in their original folders.</div>
+      </div>
+      <button is="emby-button" type="submit" class="raised button-submit block emby-button">Save preferences</button>
+      <p id="universalThemesStatus" role="status" aria-live="polite"></p>
+    </form>
+    <hr />
+    <h3>Apply web theme</h3>
+    <p>Download the selected CSS from your public GitHub theme repository and copy it to the clipboard. Back up existing CSS, then paste it in Dashboard &rarr; Branding &rarr; Custom CSS. This is deliberately not automatic.</p>
+    <button is="emby-button" class="raised emby-button" type="button" id="universalCopyCss">Copy selected theme CSS</button>
+    <p id="universalCssStatus" role="status" aria-live="polite"></p>
+    <textarea id="universalCssFallback" aria-label="CSS manual copy fallback" rows="5" class="emby-input" style="display:none;width:100%;box-sizing:border-box" readonly></textarea>
+    <hr />
+    <h3>Browse existing genres (preview)</h3>
+    <p>Searches the signed-in administrator's accessible movies and series via Jellyfin. Results appear here only; this does not yet add genre rows to TV or web home screens.</p>
+    <div class="selectContainer"><label class="selectLabel" for="universalSearchGenre">Genre</label>
+      <select is="emby-select" id="universalSearchGenre" class="emby-select-withcolor emby-select"></select>
     </div>
-  </div>
+    <div class="selectContainer"><label class="selectLabel" for="universalSearchType">Content</label>
+      <select is="emby-select" id="universalSearchType" class="emby-select-withcolor emby-select">
+        <option value="Movie,Series">Movies &amp; series</option><option value="Movie">Movies</option><option value="Series">Series</option>
+      </select>
+    </div>
+    <button is="emby-button" class="raised emby-button" type="button" id="universalSearchButton">Search this genre</button>
+    <p id="universalSearchStatus" role="status" aria-live="polite"></p>
+    <div id="universalSearchResults" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:12px"></div>
+  </div></div>
   <script type="text/javascript">
     (function () {
       'use strict';
       const page = document.querySelector('#UniversalThemesConfigPage');
       const pluginId = '2fb88a53-c9ef-4558-aad8-d3f6ab1d7491';
+      const repo = 'https://raw.githubusercontent.com/duderz2011/jellyfin-universal-themes/main/themes/';
       const theme = page.querySelector('#universalThemeChoice');
       const genres = page.querySelector('#universalGenres');
       const status = page.querySelector('#universalThemesStatus');
+      const genreChoice = page.querySelector('#universalSearchGenre');
+      const results = page.querySelector('#universalSearchResults');
+      const searchStatus = page.querySelector('#universalSearchStatus');
       let config = null;
-      let loading = false;
-
+      let busy = false;
+      function uniqueGenres() {
+        return [...new Set(genres.value.split(/\r?\n/).map(x => x.trim()).filter(Boolean))];
+      }
+      function populateGenres() {
+        const selected = genreChoice.value;
+        genreChoice.replaceChildren();
+        for (const name of uniqueGenres()) {
+          const opt = document.createElement('option'); opt.value = name; opt.textContent = name; genreChoice.appendChild(opt);
+        }
+        if ([...genreChoice.options].some(o => o.value === selected)) genreChoice.value = selected;
+      }
       async function load() {
-        if (loading) return;
-        loading = true;
-        status.textContent = 'Loading preferences…';
+        if (busy) return;
+        busy = true; status.textContent = 'Loading preferences...';
         try {
           config = await ApiClient.getPluginConfiguration(pluginId);
           theme.value = config.ThemeId || 'cinema-dark';
           genres.value = (config.DisplayGenres || []).join('\n');
-          status.textContent = '';
-        } catch (err) {
-          status.textContent = 'Unable to load plugin settings: ' + (err.message || err);
-        } finally { loading = false; }
+          populateGenres(); status.textContent = '';
+        } catch (error) { status.textContent = 'Unable to load: ' + (error.message || error); }
+        finally { busy = false; }
       }
-
       page.addEventListener('pageshow', load);
-      page.querySelector('#universalThemesForm').addEventListener('submit', async function (event) {
+      page.querySelector('#universalThemesForm').addEventListener('submit', async event => {
         event.preventDefault();
         if (!config) { status.textContent = 'Settings have not loaded.'; return; }
-        const lines = genres.value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
-        const unique = [...new Set(lines)];
-        if (unique.length < 1 || unique.length > 100) {
-          status.textContent = 'Enter between 1 and 100 genres.';
-          return;
+        const names = uniqueGenres();
+        if (!names.length || names.length > 100 || names.some(x => x.length > 80)) {
+          status.textContent = 'Enter 1–100 genre names (80 characters maximum each).'; return;
         }
-        const newConfig = Object.assign({}, config, { ThemeId: theme.value, DisplayGenres: unique });
-        status.textContent = 'Saving…';
+        const next = Object.assign({}, config, { ThemeId: theme.value, DisplayGenres: names });
+        status.textContent = 'Saving...';
+        try { await ApiClient.updatePluginConfiguration(pluginId, next); config = next; populateGenres(); status.textContent = 'Preferences saved.'; }
+        catch (error) { status.textContent = 'Save failed: ' + (error.message || error); }
+      });
+      page.querySelector('#universalCopyCss').addEventListener('click', async () => {
+        const status = page.querySelector('#universalCssStatus');
+        const fallback = page.querySelector('#universalCssFallback');
+        fallback.style.display = 'none'; status.textContent = 'Fetching theme CSS...';
         try {
-          await ApiClient.updatePluginConfiguration(pluginId, newConfig);
-          config = newConfig;
-          status.textContent = 'Preferences saved.';
-        } catch (err) {
-          status.textContent = 'Save failed: ' + (err.message || err);
-        }
+          const response = await fetch(repo + encodeURIComponent(theme.value) + '.css', {cache:'no-store'});
+          if (!response.ok) throw new Error('GitHub returned HTTP ' + response.status);
+          const css = await response.text();
+          if (!css.includes('{') || css.length < 30) throw new Error('Unexpected CSS response');
+          try {
+            await navigator.clipboard.writeText(css);
+            status.textContent = 'Copied. Back up existing Dashboard > Branding > Custom CSS, then paste and save.';
+          } catch (_) {
+            fallback.value = css; fallback.style.display = 'block'; fallback.focus(); fallback.select();
+            status.textContent = 'Clipboard permission unavailable. Copy the CSS shown below manually.';
+          }
+        } catch (error) { status.textContent = 'Cannot download stylesheet: ' + (error.message || error) + '. You can copy the CSS from the GitHub themes folder instead.'; }
+      });
+      page.querySelector('#universalSearchButton').addEventListener('click', async () => {
+        results.replaceChildren(); searchStatus.textContent = 'Searching...';
+        try {
+          const userId = ApiClient.getCurrentUserId();
+          if (!userId) throw new Error('No signed-in user ID found');
+          const response = await ApiClient.getItems(userId, {
+            Recursive: true, IncludeItemTypes: page.querySelector('#universalSearchType').value,
+            Genres: genreChoice.value, Limit: 36, StartIndex: 0,
+            SortBy: 'SortName', SortOrder: 'Ascending', Fields: 'Genres'
+          });
+          const items = response.Items || [];
+          for (const item of items) {
+            const card = document.createElement('div');
+            card.style.cssText = 'border:1px solid rgba(130,130,130,.4);padding:12px;border-radius:6px;min-height:60px';
+            const title = document.createElement('strong'); title.textContent = item.Name || 'Untitled';
+            const meta = document.createElement('div'); meta.style.cssText = 'opacity:.75;font-size:.85em;margin-top:6px';
+            meta.textContent = [item.Type, item.ProductionYear].filter(Boolean).join(' · ');
+            card.append(title, meta); results.appendChild(card);
+          }
+          searchStatus.textContent = `${items.length} matching items displayed${response.TotalRecordCount > items.length ? ' (first 36 only)' : ''}.`;
+        } catch (error) { searchStatus.textContent = 'Genre query failed: ' + (error.message || error) + '. Confirm API/client compatibility in your browser console.'; }
       });
     })();
   </script>
