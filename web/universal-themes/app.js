@@ -12,7 +12,7 @@ let selectedItem=null;
 function saveSession(){try{localStorage.setItem(sessionKey,JSON.stringify({token:auth.token,userId:auth.userId}));}catch(e){console.warn('Session could not be saved',e);}}
 function forgetSession(){try{localStorage.removeItem(sessionKey);}catch(e){}}
 
-function headers(){return {'Content-Type':'application/json',Authorization:`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.0.0", Token="${auth.token||''}"`};}
+function headers(){return {'Content-Type':'application/json',Authorization:`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.1.0", Token="${auth.token||''}"`};}
 function qs(o){return new URLSearchParams(Object.entries(o).filter(([,v])=>v!==undefined&&v!==null&&v!=='' )).toString();}
 async function api(path,options={}){const response=await fetch(base+path,{...options,headers:{...headers(),...(options.headers||{})}});if(!response.ok)throw new Error(`Jellyfin HTTP ${response.status} on ${path.split('?')[0]}`);return response.json();}
 async function imageBlob(id,kind='Primary',width=450){const r=await fetch(base+'/Items/'+encodeURIComponent(id)+'/Images/'+kind+'?'+qs({width,quality:85}),{headers:headers()});if(!r.ok)throw new Error('Image unavailable');return URL.createObjectURL(await r.blob());}
@@ -42,32 +42,78 @@ async function loadEpisodes(series){
   for(const episode of episodes){const btn=document.createElement('button');btn.type='button';btn.textContent=(episode.ParentIndexNumber?`S${episode.ParentIndexNumber} `:'')+(episode.IndexNumber?`E${episode.IndexNumber} `:'')+(episode.Name||'Episode');btn.onclick=()=>playItem(episode);target.append(btn);}
  } finally{$('playTitle').disabled=false;}
 }
-function stopPlayer(){const v=$('videoPlayer');v.pause();v.removeAttribute('src');v.load();$('player').close();}
+/* v1.1: playback session reporting + resume, without changing the existing direct-stream player. */
+let activePlayback=null;
+let playbackInterval=null;
+function ticksAtPlayback(){
+ const v=$('videoPlayer');
+ return Math.max(0,Math.round((Number.isFinite(v.currentTime)?v.currentTime:0)*10000000));
+}
+function reportPlayback(endpoint,keepalive=false){
+ if(!activePlayback||!auth.token)return Promise.resolve();
+ const p=activePlayback;
+ const data={ItemId:p.itemId,MediaSourceId:p.mediaSourceId,PlaySessionId:p.playSessionId,
+  PlayMethod:'DirectStream',PositionTicks:ticksAtPlayback(),IsPaused:$('videoPlayer').paused,
+  IsMuted:$('videoPlayer').muted};
+ return fetch(base+'/Sessions/Playing'+endpoint,{method:'POST',headers:headers(),body:JSON.stringify(data),keepalive})
+  .then(r=>{if(!r.ok)console.warn('Playback progress HTTP',r.status);})
+  .catch(e=>console.warn('Playback status could not be reported',e));
+}
+function clearPlaybackTimer(){if(playbackInterval!==null){clearInterval(playbackInterval);playbackInterval=null;}}
+function stopPlayer(){
+ const v=$('videoPlayer');
+ clearPlaybackTimer();
+ if(activePlayback){reportPlayback('/Stopped',true);activePlayback=null;}
+ v.pause();v.removeAttribute('src');v.load();
+ if($('player').open)$('player').close();
+}
 $('closePlayer').onclick=stopPlayer;
-$('player').addEventListener('cancel',()=>{const v=$('videoPlayer');v.pause();v.removeAttribute('src');v.load();});
+$('player').addEventListener('cancel',e=>{e.preventDefault();stopPlayer();});
 $('player').addEventListener('click',e=>{if(e.target===$('player'))stopPlayer();});
 async function playItem(item){
  $('playStatus').textContent='Preparing playback…';
  try{
   if(!auth.token)throw Error('Please sign in again.');
-  const info=await api('/Items/'+encodeURIComponent(item.Id)+'/PlaybackInfo?'+qs({UserId:auth.userId}),{method:'POST',body:JSON.stringify({UserId:auth.userId,StartTimeTicks:0,EnableDirectPlay:true,EnableDirectStream:true,EnableTranscoding:true})});
+  // Resolve the user's saved position even if it was not included in catalogue responses.
+  let startingAt=0;
+  try{
+   const detail=await api('/Users/'+encodeURIComponent(auth.userId)+'/Items/'+encodeURIComponent(item.Id));
+   const saved=Number(detail.UserData?.PlaybackPositionTicks||0);
+   if(saved>300000000 && !detail.UserData?.Played && window.confirm('Resume '+(item.Name||'video')+' where you left off?')) startingAt=saved;
+  }catch(e){console.warn('No resume data available',e);}
+  const info=await api('/Items/'+encodeURIComponent(item.Id)+'/PlaybackInfo?'+qs({UserId:auth.userId}),{
+   method:'POST',body:JSON.stringify({UserId:auth.userId,StartTimeTicks:startingAt,
+    EnableDirectPlay:true,EnableDirectStream:true,EnableTranscoding:true})});
   const source=(info.MediaSources||[]).find(x=>x.SupportsDirectPlay||x.SupportsDirectStream)||(info.MediaSources||[])[0];
   if(!source)throw Error('Jellyfin did not return an accessible media source.');
   const stream=new URL(base+'/Videos/'+encodeURIComponent(item.Id)+'/stream',location.origin);
-  stream.searchParams.set('Static','true');
-  stream.searchParams.set('MediaSourceId',source.Id||item.Id);
+  stream.searchParams.set('Static','true');stream.searchParams.set('MediaSourceId',source.Id||item.Id);
   stream.searchParams.set('api_key',auth.token);
-  const video=$('videoPlayer');
-  // Browsers cannot attach Authorization headers to media elements. Jellyfin's token-based media URL is kept out of browser history.
-  video.src=stream.toString();video.load();
-  $('playerTitle').textContent=item.Name||'Video';
-  $('playStatus').textContent='';
+  const v=$('videoPlayer');
+  if(activePlayback)stopPlayer();
+  activePlayback={itemId:item.Id,mediaSourceId:source.Id||item.Id,playSessionId:info.PlaySessionId||undefined};
+  v.src=stream.toString();v.load();
+  if(startingAt>0){v.addEventListener('loadedmetadata',function resumeOnce(){
+   v.removeEventListener('loadedmetadata',resumeOnce);
+   const seconds=startingAt/10000000;
+   if(Number.isFinite(v.duration)&&v.duration>0)v.currentTime=Math.min(seconds,Math.max(0,v.duration-5));
+   else v.currentTime=seconds;
+  });}
+  $('playerTitle').textContent=item.Name||'Video';$('playerStatus').textContent='';$('playStatus').textContent='';
   $('details').close();$('player').showModal();
-  video.play().catch(()=>{$('playerStatus').textContent='Press Play to start. If playback fails, this media format may require transcoding.';});
+  v.play().catch(()=>{$('playerStatus').textContent='Press Play to start. This file may require a compatible format or transcoding.';});
  }catch(err){$('playStatus').textContent='Playback unavailable: '+err.message;}
 }
-$('videoPlayer').addEventListener('playing',()=>{$('playerStatus').textContent='';});
-$('videoPlayer').addEventListener('error',()=>{$('playerStatus').textContent='This file could not play directly in this browser. It may need server transcoding or a native player (planned next).';});
+const playbackVideo=$('videoPlayer');
+playbackVideo.addEventListener('playing',()=>{
+ $('playerStatus').textContent='';
+ if(activePlayback&&!activePlayback.started){activePlayback.started=true;reportPlayback('');}
+ clearPlaybackTimer();playbackInterval=setInterval(()=>reportPlayback('/Progress'),10000);
+});
+playbackVideo.addEventListener('pause',()=>{if(activePlayback)reportPlayback('/Progress');clearPlaybackTimer();});
+playbackVideo.addEventListener('seeked',()=>{if(activePlayback)reportPlayback('/Progress');});
+playbackVideo.addEventListener('ended',stopPlayer);
+playbackVideo.addEventListener('error',()=>{$('playerStatus').textContent='Unable to play this format directly. A Jellyfin transcoding-capable player is still needed for unsupported codecs.';});
 
 $('closeDetails').onclick=()=>$('details').close();
 $('details').addEventListener('click',e=>{if(e.target===$('details'))$('details').close();});
@@ -149,7 +195,7 @@ async function render(){
   $('status').textContent=$('rows').children.length?'':'No matching titles found in your accessible libraries.';
  }catch(err){if(stamp===state.render)$('status').textContent='Unable to load content: '+err.message;}
 }
-$('loginForm').onsubmit=async e=>{e.preventDefault();$('loginStatus').textContent='Signing in…';try{const r=await api('/Users/AuthenticateByName',{method:'POST',body:JSON.stringify({Username:$('username').value,Pw:$('password').value,App:'UniversalThemesWeb',Device:'Browser',DeviceId:deviceId,Version:'1.0.0'})});auth.token=r.AccessToken;auth.userId=r.User.Id;saveSession();$('password').value='';await loadLibraries();await loadGenres();$('login').hidden=true;$('app').hidden=false;render();}catch(err){$('loginStatus').textContent='Login failed: '+err.message;}};
+$('loginForm').onsubmit=async e=>{e.preventDefault();$('loginStatus').textContent='Signing in…';try{const r=await api('/Users/AuthenticateByName',{method:'POST',body:JSON.stringify({Username:$('username').value,Pw:$('password').value,App:'UniversalThemesWeb',Device:'Browser',DeviceId:deviceId,Version:'1.1.0'})});auth.token=r.AccessToken;auth.userId=r.User.Id;saveSession();$('password').value='';await loadLibraries();await loadGenres();$('login').hidden=true;$('app').hidden=false;render();}catch(err){$('loginStatus').textContent='Login failed: '+err.message;}};
 $('homeLink').onclick=e=>{e.preventDefault();state.library='';state.page=0;state.genre='';state.query='';$('search').value='';highlightNavigation();loadGenres().then(render);};
 $('signout').onclick=async()=>{
  if($('player').open)stopPlayer();if($('details').open)$('details').close();
@@ -159,7 +205,7 @@ $('signout').onclick=async()=>{
  forgetSession();auth.token=null;auth.userId=null;
  state.libraries=[];state.library='';state.genre='';state.query='';
  $('app').hidden=true;$('login').hidden=false;$('rows').replaceChildren();$('username').value='';$('password').value='';
- if(token){try{await fetch(base+'/Sessions/Logout',{method:'POST',headers:{'Authorization':`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.0.0", Token="${token}"`}});}catch(e){console.warn('Server logout not confirmed',e);}}
+ if(token){try{await fetch(base+'/Sessions/Logout',{method:'POST',headers:{'Authorization':`MediaBrowser Client="UniversalThemesWeb", Device="Browser", DeviceId="${deviceId}", Version="1.1.0", Token="${token}"`}});}catch(e){console.warn('Server logout not confirmed',e);}}
 };
 async function restoreSession(){
  let saved;try{saved=JSON.parse(localStorage.getItem(sessionKey)||'null');}catch(e){forgetSession();return;}
