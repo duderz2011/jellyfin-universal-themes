@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Jellyfin.Plugin.UniversalThemes")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+16b19f93b25b07e9a1160ed678a21f9b8711c91c")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4eebb1f25bf8385ff5e63bde805058a29ef8a6d3")]
 [assembly: System.Reflection.AssemblyProductAttribute("Jellyfin.Plugin.UniversalThemes")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Jellyfin.Plugin.UniversalThemes")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

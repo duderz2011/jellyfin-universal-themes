@@ -22,7 +22,7 @@ if(page.query){await row('Search results for '+page.query,{SearchTerm:page.query
 else{const picks=genres;for(const genre of picks){await row(genre,{Genres:genre,SortBy:'SortName',SortOrder:'Ascending'});}}
 $('status').textContent='';if(!$('rows').children.length)$('status').textContent='No matching items in accessible libraries.';
 }catch(e){$('status').textContent='Unable to load library: '+e.message;}}
-$('loginForm').onsubmit=async e=>{e.preventDefault();$('loginStatus').textContent='Signing in…';try{const r=await api('/Users/AuthenticateByName',{method:'POST',body:JSON.stringify({Username:$('username').value,Pwd:$('password').value})});auth.token=r.AccessToken;auth.userId=r.User.Id;$('password').value='';$('login').hidden=true;$('app').hidden=false;build();}catch(e){$('loginStatus').textContent='Login failed: '+e.message;}};
+$('loginForm').onsubmit=async e=>{e.preventDefault();$('loginStatus').textContent='Signing in…';try{const r=await api('/Users/AuthenticateByName',{method:'POST',body:JSON.stringify({Username:$('username').value,Pw:$('password').value})});auth.token=r.AccessToken;auth.userId=r.User.Id;$('password').value='';$('login').hidden=true;$('app').hidden=false;build();}catch(e){$('loginStatus').textContent='Login failed: '+e.message;}};
 $('signout').onclick=()=>{auth.token=null;auth.userId=null;$('app').hidden=true;$('login').hidden=false;$('rows').replaceChildren();};
 document.querySelectorAll('[data-section]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-section]').forEach(x=>x.classList.toggle('selected',x===b));page.section=b.dataset.section;build();});
 let searchTimer;$('search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{page.query=$('search').value.trim();build();},450);};
