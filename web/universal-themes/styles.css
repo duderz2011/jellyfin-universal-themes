@@ -29,3 +29,6 @@
 
 /* v1.5 opt-in transcoding */
 .ut-hls-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:4px 5px 12px}.ut-hls-bar small{color:var(--muted)}.ut-hls-bar button{background:var(--panel);border:1px solid var(--accent)}.ut-hls-bar button:focus-visible{outline:3px solid white}
+
+/* UT_QUALITY_V17_START */
+.ut-hls-bar label{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.ut-hls-bar select{max-width:260px}

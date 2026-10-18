@@ -356,10 +356,18 @@ const utOriginalStopPlayer=stopPlayer;
 stopPlayer=function(){utDestroyHls();utHlsCurrentItem=null;utOriginalStopPlayer();};
 const utOriginalPlayItem=playItem;
 playItem=async function(item){utDestroyHls();utHlsCurrentItem=item;utHlsStatus.textContent='Direct playback is selected. Use HLS if this format fails.';return utOriginalPlayItem(item);};
-function utHlsProfile(){return {
- MaxStreamingBitrate:12000000,
+/* UT_QUALITY_V17_START: quality cap sent in Jellyfin device profile. */
+const utQualitySelect = $('utQuality');
+function utQualitySettings(){
+ const settings = {auto:{bitrate:12000000},high:{bitrate:8000000,width:1920,height:1080},medium:{bitrate:4000000,width:1280,height:720},low:{bitrate:2000000,width:854,height:480}};
+ return settings[utQualitySelect.value] || settings.auto;
+}
+function utHlsProfile(){
+ const quality=utQualitySettings();
+ return {
+ MaxStreamingBitrate:quality.bitrate,
  DirectPlayProfiles:[],
- TranscodingProfiles:[{Container:'ts',Type:'Video',VideoCodec:'h264',AudioCodec:'aac',Protocol:'hls',Context:'Streaming',MaxAudioChannels:'2',MinSegments:1,SegmentLength:6,BreakOnNonKeyFrames:true}],
+ TranscodingProfiles:[{Container:'ts',Type:'Video',VideoCodec:'h264',AudioCodec:'aac',Protocol:'hls',Context:'Streaming',MaxAudioChannels:'2',MaxWidth:quality.width||undefined,MaxHeight:quality.height||undefined,MinSegments:1,SegmentLength:6,BreakOnNonKeyFrames:true}],
  CodecProfiles:[],
  SubtitleProfiles:[{Format:'vtt',Method:'External'}]
 };}
@@ -404,6 +412,13 @@ async function utStartHls(){
  finally{utHlsLoading=false;utHlsButton.disabled=false;}
 }
 utHlsButton.addEventListener('click',utStartHls);
+utQualitySelect.addEventListener('change',()=>{
+ const q=utQualitySettings();
+ utHlsStatus.textContent = utQualitySelect.value==='auto'?'Automatic quality selected.':'Quality preference set ('+Math.round(q.bitrate/1000000)+' Mbps cap).';
+ if(!activePlayback) return;
+ if(activePlayback.playMethod==='Transcode' || utQualitySelect.value!=='auto') utStartHls();
+});
+/* UT_QUALITY_V17_END */
 /* UT_HLS_V15_END */
 /* UT_AUTO_HLS_V16_START: one automatic direct-to-HLS fallback per item. */
 let utAutoItemId = null;
